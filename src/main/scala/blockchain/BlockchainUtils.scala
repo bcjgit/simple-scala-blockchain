@@ -22,7 +22,7 @@ object BlockchainUtils {
     */
   def calculateBlockHash(block: Block): Option[Array[Byte]] = {
     try {
-      Option.apply(
+      Some(
         MessageDigest
           .getInstance(SHA_256)
           .digest(SerializationUtils.serialise(block))
@@ -30,11 +30,11 @@ object BlockchainUtils {
     } catch {
       case e: NoSuchAlgorithmException => {
         logger.error("Failed to load SHA-256 hash function")
-        Option.empty
+        None
       }
       case e: UnsupportedEncodingException => {
         logger.error("UnsupportedEncodingException when hashing block")
-        Option.empty
+        None
       }
     }
   }
@@ -84,5 +84,65 @@ object BlockchainUtils {
       )
     }
 
+  }
+
+  /**
+    * Check that the hash value included in the block is indeed the block hash
+    * @param block [[Block]] who's hash we want to check
+    * @return boolean true iff block hash matches hash value included in block
+    */
+  def blockHashMatchesContainedHash(block: Block): Boolean = {
+    calculateBlockHash(block) match {
+      case Some(hashArr) => block.hash.equals(hashArr)
+      case None          => false
+    }
+  }
+
+  /**
+    * Validate blockchain on non genisis blocks
+    * @param blockchain List of [[Block]]s
+    * @param prefix int prefix length of 0s in our hash
+    * @param prevBlockHash hash of previous block
+    * @return boolean true iff head block in chain is valid
+    */
+  @tailrec
+  def validateChainTail(
+      blockchain: List[Block],
+      prefix: Int,
+      prevBlockHash: Array[Byte]
+  ): Boolean = {
+    if (blockchain.isEmpty) {
+      return true
+    }
+    val block = blockchain.head
+    if (
+      !(prevBlockHash.sameElements(
+        block.previousHash.get
+      ) && blockHashMatchesContainedHash(
+        block
+      ) && checkHashContainsDesiredZeroPrefixLength(prefix, block.hash))
+    ) {
+      false
+    } else {
+      validateChainTail(blockchain.tail, prefix, block.previousHash.get)
+    }
+  }
+
+  def chainIsValid(blockchain: List[Block], prefix: Int): Boolean = {
+    if (blockchain.isEmpty) {
+      return true
+    }
+    // Verify first block as a special case (it has no previous hash)
+    val genesisBlock = blockchain.head
+    if (
+      !(blockHashMatchesContainedHash(
+        genesisBlock
+      ) && checkHashContainsDesiredZeroPrefixLength(prefix, genesisBlock.hash))
+    ) {
+      false
+    } else {
+      // TODO do we need this?
+      validateChainTail(blockchain.tail, prefix, genesisBlock.hash)
+    }
   }
 }
